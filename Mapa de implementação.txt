@@ -1,0 +1,788 @@
+ACE — Especificação de referência para implementação
+1. Conceito do produto
+O ACE — Agente Conversacional Estruturado será a interface de atendimento responsável por facilitar a abertura de chamados no Portal ITSM.
+O ACE não será um chatbot genérico e não será um segundo ITSM.
+Sua função é conduzir o usuário por um processo estruturado:
+Identificar
+   ↓
+Apresentar opções
+   ↓
+Usuário seleciona
+   ↓
+ACE sugere informações
+   ↓
+Usuário confirma/corrige
+   ↓
+Resumo
+   ↓
+Confirmação
+   ↓
+Criação do chamado
+   ↓
+Protocolo
+
+A experiência deve parecer conversacional, mas o comportamento interno será controlado por estados.
+2. Princípio arquitetural fundamental
+O Portal ITSM é a fonte oficial das regras e dos dados de negócio.
+O ACE não deverá duplicar regras que já pertencem ao Portal.
+Portal ITSM
+Responsável por:
+- usuários;
+- serviços;
+- subcategorias;
+- ativação/desativação;
+- regras de classificação;
+- criticidade;
+- SLA;
+- criação do chamado;
+- tratamento do chamado;
+- acompanhamento;
+- histórico;
+- gestão posterior.
+ACE
+Responsável por:
+- autenticação;
+- condução da conversa;
+- apresentação dos serviços;
+- apresentação das subcategorias;
+- coleta das informações necessárias;
+- sugestão da descrição;
+- edição da descrição;
+- resumo;
+- confirmação;
+- solicitação de criação;
+- apresentação do protocolo;
+- possibilidade de iniciar outro chamado.
+3. Identidade do usuário
+O ACE deverá utilizar a mesma identidade institucional do Portal ITSM.
+Não será criado um cadastro paralelo de usuários para o ACE.
+A identidade autenticada deverá estar relacionada ao cadastro correspondente no Firestore.
+Conceitualmente:
+Usuário
+   ↓
+Firebase Authentication
+   ↓
+UID
+   ↓
+Cadastro do usuário no ITSM
+   ↓
+ACE sabe quem está realizando o atendimento
+
+Isso é importante porque o ACE nunca deve confiar simplesmente em:
+"Digite seu usuário"
+
+e assumir que aquela pessoa é realmente aquele usuário.
+O chamado deverá nascer associado à identidade autenticada.
+4. Sessão do ACE
+A autenticação do Firebase e a sessão de atendimento do ACE serão tratadas como conceitos diferentes.
+Firebase
+Representa a identidade autenticada.
+ACE
+Representa uma sessão de atendimento ativa.
+A sessão do ACE possuirá tempo de inatividade.
+Exemplo conceitual:
+09:00
+Usuário entra
+
+09:05
+Abre chamado
+
+09:07
+Escolhe "Abrir novo chamado"
+
+09:08
+Continua utilizando o ACE
+
+Enquanto a sessão estiver válida, o usuário poderá iniciar outro chamado.
+Por outro lado:
+09:08
+Última interação
+
+15:00
+Usuário retorna
+
+A sessão de atendimento já poderá estar expirada.
+Nesse caso:
+Sua sessão de atendimento expirou. Para sua segurança, confirme sua identidade para continuar.
+
+O usuário deverá se revalidar antes de abrir um novo chamado.
+5. Validação antes da criação
+A criação do chamado é uma operação crítica.
+Portanto, antes de efetivamente criar o chamado:
+Usuário confirma
+       ↓
+ACE verifica identidade/sessão
+       ↓
+Autorizado?
+       ↓
+Portal cria chamado
+
+Não devemos depender apenas de um botão habilitado/desabilitado no navegador.
+A operação de criação deverá ser protegida pela camada responsável pela gravação do chamado.
+6. Início do atendimento
+Depois da autenticação, o ACE identifica o usuário.
+A comunicação deve ser curta e natural.
+Exemplo:
+Olá, João!
+Sou o assistente de atendimento de TI. Vou ajudá-lo a registrar sua solicitação.
+
+Em seguida:
+Qual serviço você precisa?
+
+O usuário não precisa digitar o serviço.
+7. Serviços
+Os serviços serão dinâmicos.
+O ACE não terá:
+const servicos = [...]
+
+com catálogo fixo.
+Ele consultará os serviços ativos disponibilizados pelo Portal ITSM.
+Firestore
+   ↓
+Serviços ativos
+   ↓
+ACE
+   ↓
+Cards
+
+Todos os usuários terão acesso aos serviços ativos do catálogo.
+Não haverá, nesta versão, separação de serviços por usuário.
+8. Apresentação dos serviços
+A opção aprovada é o modelo de cards em lista.
+Cada serviço será apresentado aproximadamente assim:
+┌──────────────────────────────────────┐
+│                                      │
+│  [ IMAGEM ]   Impressora           › │
+│               Impressão e            │
+│               equipamentos           │
+│                                      │
+└──────────────────────────────────────┘
+
+Características:
+- card vertical;
+- imagem;
+- nome do serviço;
+- descrição curta, quando disponível;
+- área de seleção;
+- visual mobile-first;
+- clique no card representa a seleção;
+- não é necessário botão "Enviar".
+9. Imagens dos cards
+Os cards serão preparados para utilizar imagens próprias.
+Estrutura inicial conceitual:
+assets/
+└── services/
+    └── default.webp
+
+Posteriormente poderão existir:
+assets/
+└── services/
+    ├── default.webp
+    ├── computador.webp
+    ├── impressora.webp
+    ├── rede.webp
+    ├── acesso.webp
+    └── ...
+
+O card sempre possuirá uma área para imagem.
+Se houver imagem específica:
+imagem específica
+
+Se não houver:
+imagem padrão
+
+Isso permite começar com uma identidade visual consistente e evoluir posteriormente.
+10. Seleção do serviço
+Depois de selecionar, por exemplo:
+Impressora
+
+o ACE não precisa fazer uma pergunta artificial.
+Pode responder:
+Entendi. Você precisa de atendimento relacionado a Impressora.
+
+E imediatamente apresentar:
+Qual opção melhor descreve sua necessidade?
+
+11. Subcategorias
+As subcategorias também serão carregadas dinamicamente do Portal.
+Serviço selecionado
+       ↓
+Firestore
+       ↓
+Subcategorias ativas
+       ↓
+ACE
+       ↓
+Cards
+
+Não haverá subcategorias codificadas no ACE.
+O cadastro do Portal já garante que um serviço seja concluído corretamente com pelo menos uma subcategoria.
+Portanto, serviço sem subcategoria não é tratado como fluxo funcional normal.
+12. Seleção de subcategoria
+O usuário também não deverá digitar a subcategoria.
+Ele simplesmente seleciona.
+Exemplo:
+Computador
+
+[ Instalação de programas ]
+
+[ Mudança de local ]
+
+[ Não liga ]
+
+[ Sem internet ]
+
+[ Outro ]
+
+A experiência será baseada em seleção sempre que houver uma resposta fechada conhecida pelo sistema.
+13. Descrição sugerida
+Esta é uma das principais características do ACE.
+Depois de serviço + subcategoria, o ACE utilizará a descrição sugerida cadastrada para aquela subcategoria.
+Exemplo:
+Serviço:
+Impressora
+
+Subcategoria:
+Não imprime
+
+O ACE apresenta:
+Com base no que você selecionou, preparei uma descrição para o chamado:
+A impressora do setor não está imprimindo os documentos enviados.
+Essa descrição está correta?
+
+Botões:
+[ Sim ]
+[ Editar descrição ]
+14. Descrição sugerida pertence ao Portal
+A descrição sugerida não deverá ser criada com dezenas de if dentro do ACE.
+Não queremos:
+if (servico === "Impressora" &&
+    subcategoria === "Não imprime") {
+    ...
+}
+
+O Portal deverá armazenar esse conteúdo junto à subcategoria.
+Conceitualmente:
+Subcategoria
+├── nome
+├── status
+└── descrição sugerida
+
+O ACE apenas consulta e apresenta.
+Isso permite que o administrador altere a sugestão sem alterar o código do ACE.
+15. Descrição como experiência de cliques
+Essa é uma característica importante do produto.
+Em muitos casos, o usuário poderá abrir um chamado sem digitar nada.
+Fluxo ideal:
+Login
+   ↓
+Seleciona serviço
+   ↓
+Seleciona subcategoria
+   ↓
+ACE sugere descrição
+   ↓
+[ SIM ]
+   ↓
+Resumo
+
+A digitação passa a ser necessária somente quando o usuário quiser corrigir ou complementar a sugestão.
+Isso reduz drasticamente o esforço para abrir chamados.
+16. Edição da descrição
+Se o usuário selecionar:
+[ Editar descrição ]
+o ACE apresenta a descrição já existente para edição.
+Exemplo:
+Edite a descrição da sua solicitação:
+
+┌───────────────────────────────────────┐
+│ A impressora do setor não está       │
+│ imprimindo os documentos enviados.   │
+│                                       │
+└───────────────────────────────────────┘
+
+[ Confirmar descrição ]
+
+O usuário pode complementar:
+A impressora da recepção não está imprimindo os documentos enviados pelo computador 03.
+
+A sugestão original não é perdida até que o usuário a substitua.
+17. Validação da descrição
+Quando o usuário editar a descrição, o ACE deverá realizar uma validação mínima.
+Objetivo:
+evitar entradas claramente inválidas como:
+xxxxxxxxxxxxxxxxxxxxxxxx
+aaaaaaaaaaaaaaaaaaaaaaaa
+111111111111111111111111
+!!!!!!!!!!!!!!!
+teste
+
+A validação deverá considerar aspectos como:
+- quantidade mínima de caracteres;
+- quantidade mínima de letras;
+- quantidade mínima de palavras;
+- padrões excessivamente repetitivos;
+- entradas obviamente inválidas.
+Não devemos utilizar um dicionário rígido de palavras permitidas.
+O ACE não deve tentar decidir se o problema relatado é tecnicamente verdadeiro.
+Ele deve apenas verificar se existe uma descrição minimamente utilizável.
+18. Orientação ao usuário
+Quando houver necessidade de digitação, o ACE deve induzir o usuário a fornecer informações úteis.
+Mensagem sugerida:
+Agora me conte com mais detalhes o que você precisa.
+Procure informar onde está acontecendo e o que está acontecendo.
+Exemplo:
+Preciso de apoio técnico na sala 1 - 1º andar.
+
+Sempre que possível, o exemplo poderá ser contextualizado à subcategoria.
+Exemplo:
+A impressora da recepção não está imprimindo os documentos enviados.
+
+Isso melhora a qualidade dos chamados sem transformar o atendimento em um interrogatório.
+19. Resumo do chamado
+Depois que a descrição estiver definida, o ACE apresenta o resumo.
+Exemplo:
+Confira sua solicitação:
+Serviço
+Impressora
+Subcategoria
+Não imprime
+Descrição
+A impressora do setor não está imprimindo os documentos enviados.
+Está tudo correto?
+
+Botões:
+[ Confirmar e abrir chamado ]
+[ Alterar ]
+20. Correção do resumo
+O usuário não precisa reiniciar todo o atendimento.
+Se selecionar:
+[ Alterar ]
+o ACE pergunta:
+O que você deseja alterar?
+
+Opções:
+[ Serviço ]
+[ Subcategoria ]
+[ Descrição ]
+21. Alterar serviço
+Se escolher Serviço:
+Alterar serviço
+      ↓
+serviços ativos
+      ↓
+usuário escolhe novo serviço
+      ↓
+subcategorias desse serviço
+      ↓
+nova seleção
+      ↓
+nova descrição sugerida
+      ↓
+resumo atualizado
+
+22. Alterar subcategoria
+Se escolher Subcategoria:
+Alterar subcategoria
+      ↓
+subcategorias do serviço atual
+      ↓
+usuário escolhe nova subcategoria
+      ↓
+nova descrição sugerida
+      ↓
+resumo atualizado
+
+A troca de subcategoria deverá fazer o ACE considerar a descrição sugerida correspondente à nova escolha.
+23. Alterar descrição
+Se escolher Descrição:
+Descrição atual
+      ↓
+campo de edição
+      ↓
+usuário modifica
+      ↓
+validação
+      ↓
+confirma
+      ↓
+resumo atualizado
+
+O usuário não volta desnecessariamente para as etapas anteriores.
+24. Confirmação
+Quando o usuário selecionar:
+[ Confirmar e abrir chamado ]
+o ACE passa para a criação.
+Fluxo:
+Resumo
+   ↓
+Confirmação
+   ↓
+Validar sessão/identidade
+   ↓
+Enviar solicitação ao Portal
+   ↓
+Portal processa
+   ↓
+Chamado criado
+
+O Portal continua responsável pelas suas regras de negócio.
+25. SLA, criticidade e classificação
+O ACE não possui essas regras.
+O ACE não terá tabelas próprias de SLA.
+Não terá regras paralelas de criticidade.
+Não terá regras duplicadas de classificação.
+Essas informações já pertencem ao Portal ITSM.
+Conceitualmente:
+ACE
+ ↓
+Serviço
+Subcategoria
+Descrição
+ ↓
+Portal ITSM
+ ↓
+Regras existentes
+ ↓
+Classificação
+Criticidade
+SLA
+Demais regras
+ ↓
+Chamado
+
+26. Chamado criado
+Após o Portal retornar sucesso, o ACE apresenta:
+Chamado aberto com sucesso!
+Sua solicitação foi registrada no Portal de Atendimento de TI.
+Protocolo: #2026-000123
+
+E disponibiliza:
+[ Abrir novo chamado ]
+O ACE não precisa criar uma ferramenta paralela de acompanhamento.
+27. Acompanhamento de chamados
+Não fará parte do ACE nesta primeira versão.
+O acompanhamento será responsabilidade do Portal ITSM.
+Isso evita transformar o ACE em uma segunda interface de gestão de chamados.
+O Portal continuará responsável por:
+- acompanhamento;
+- histórico;
+- tratamento;
+- atualizações;
+- comunicação;
+- encerramento;
+- demais atividades do ciclo de vida.
+28. Abrir novo chamado
+A opção:
+[ Abrir novo chamado ]
+é mantida.
+Ao clicar:
+Claro. Vamos registrar uma nova solicitação.
+Qual serviço você precisa?
+
+O ACE retorna à seleção de serviços.
+Não precisa pedir login novamente se a sessão ainda estiver válida.
+Chamado criado
+      ↓
+Abrir novo chamado
+      ↓
+Serviços
+      ↓
+Subcategorias
+      ↓
+Descrição
+      ↓
+Resumo
+      ↓
+Novo chamado
+
+29. Segurança ao abrir outro chamado
+A possibilidade de abrir outro chamado não significa que a sessão seja válida indefinidamente.
+Se o usuário ficou muito tempo sem interagir:
+Sessão ACE expirada
+       ↓
+Abrir novo chamado
+       ↓
+Solicitar nova validação
+
+Isso evita que outra pessoa utilize uma estação deixada aberta e abra um chamado em nome do usuário anterior.
+30. Responsabilidade do ACE
+O ACE:
+FAZ
+- autentica;
+- identifica;
+- apresenta;
+- orienta;
+- coleta;
+- sugere;
+- valida;
+- confirma;
+- solicita abertura;
+- apresenta protocolo.
+NÃO FAZ
+- solucionar problemas;
+- realizar troubleshooting;
+- inventar procedimentos técnicos;
+- administrar chamados;
+- acompanhar chamados;
+- duplicar SLA;
+- duplicar criticidade;
+- duplicar regras do ITSM;
+- manter catálogo independente.
+31. Filosofia de interação
+A experiência deve priorizar:
+Clique > digitação
+Sempre que a resposta puder ser determinada por uma opção conhecida:
+[ Computador ]
+[ Impressora ]
+[ Rede ]
+
+em vez de:
+Digite o serviço desejado.
+
+E:
+[ Não imprime ]
+[ Instalação ]
+[ Configuração ]
+
+em vez de pedir ao usuário para descrever qual subcategoria deseja.
+A digitação fica reservada principalmente para a descrição quando o usuário desejar editar/complementar a sugestão.
+32. Visual
+A direção visual aprovada é:
+- mobile-first;
+- interface limpa;
+- aparência profissional;
+- identidade própria do ACE;
+- cards;
+- imagens próprias;
+- pouco ou nenhum uso de emojis;
+- evitar dependência visual de bibliotecas genéricas de ícones;
+- imagens armazenadas em assets;
+- fallback para imagem padrão;
+- mensagens do ACE claramente diferenciadas das ações do usuário;
+- botões grandes e fáceis de tocar;
+- estados visualmente claros;
+- transições naturais entre as etapas.
+Estrutura inicial prevista:
+ACE/
+│
+├── index.html
+├── app.js
+├── visual.css
+├── auth.js
+├── db.js
+├── firebase-config.js
+├── manifest.json
+├── sw.js
+│
+└── assets/
+    ├── services/
+    ├── subcategories/
+    └── ui/
+
+Essa estrutura segue o padrão que já utilizamos nos seus projetos PWA.
+33. Modelo mental do ACE
+A implementação deve ser pensada como uma máquina de estados conversacional.
+Conceitualmente:
+AUTHENTICATING
+      ↓
+WELCOME
+      ↓
+SELECT_SERVICE
+      ↓
+SELECT_SUBCATEGORY
+      ↓
+SUGGEST_DESCRIPTION
+      ↓
+EDIT_DESCRIPTION
+      ↓
+SUMMARY
+      ↓
+EDIT_SELECTION
+      ↓
+CONFIRM_CREATE
+      ↓
+CREATING_TICKET
+      ↓
+TICKET_CREATED
+      ↓
+NEW_TICKET
+
+Nem todos esses estados necessariamente serão telas independentes.
+São estados internos do fluxo.
+O usuário continuará percebendo uma conversa contínua.
+34. Fluxo completo consolidado
+A implementação final deverá reproduzir conceitualmente isto:
+┌───────────────────────────┐
+│      AUTENTICAÇÃO         │
+└─────────────┬─────────────┘
+              ↓
+┌───────────────────────────┐
+│    USUÁRIO IDENTIFICADO   │
+└─────────────┬─────────────┘
+              ↓
+┌───────────────────────────┐
+│     SERVIÇOS ATIVOS       │
+│        [ cards ]          │
+└─────────────┬─────────────┘
+              ↓
+┌───────────────────────────┐
+│       SUBCATEGORIAS       │
+│        [ cards ]          │
+└─────────────┬─────────────┘
+              ↓
+┌───────────────────────────┐
+│   DESCRIÇÃO SUGERIDA      │
+│                           │
+│ [ SIM ] [ EDITAR ]        │
+└─────────────┬─────────────┘
+              ↓
+┌───────────────────────────┐
+│          RESUMO           │
+│                           │
+│ Serviço                   │
+│ Subcategoria              │
+│ Descrição                 │
+│                           │
+│ [ CONFIRMAR ] [ ALTERAR ] │
+└─────────────┬─────────────┘
+              ↓
+┌───────────────────────────┐
+│       CRIAÇÃO ITSM        │
+└─────────────┬─────────────┘
+              ↓
+┌───────────────────────────┐
+│    CHAMADO ABERTO         │
+│                           │
+│    Protocolo              │
+│                           │
+│ [ ABRIR NOVO CHAMADO ]    │
+└───────────────────────────┘
+
+35. Regra de ouro da implementação
+A implementação deve respeitar uma separação muito clara:
+O ACE conduz. O Portal decide.
+
+O ACE não deve começar a acumular regras de negócio só porque isso parece mais fácil durante o desenvolvimento.
+Se uma informação já é administrada pelo Portal, o ACE consulta.
+Se uma regra já existe no Portal, o ACE utiliza o resultado.
+Se o administrador alterar o catálogo, o ACE acompanha.
+Se o administrador cadastrar uma nova subcategoria com uma nova descrição sugerida, o ACE deve ser capaz de utilizá-la sem alteração estrutural no código.
+36. Estado atual do projeto
+Neste momento temos uma definição funcional suficientemente sólida para entrar na próxima fase.
+Ainda não devemos começar a codificação imediatamente.
+O próximo passo recomendado é transformar esta especificação em arquitetura técnica do ACE, definindo:
+1. Estrutura dos arquivos
+2. Estrutura dos estados
+3. Estrutura dos documentos Firestore
+4. Como o ACE consulta usuários
+5. Como consulta serviços
+6. Como consulta subcategorias
+7. Como recebe a descrição sugerida
+8. Como envia a solicitação para criação
+9. Como o Portal/Firestore devolve o chamado criado
+10. Como funciona a sessão do ACE
+11. Como será feita a revalidação
+12. Regras de segurança do Firestore/Backend
+
+Só depois disso partimos para os arquivos.
+As imagens e o resumo acima ficam como nosso guia visual e funcional de implementação. A imagem principal representa o fluxo completo; as decisões de comportamento definidas nesta conversa prevalecem sobre qualquer detalhe ilustrativo que eventualmente apareça diferente na arte.
+Concluí a consolidação do ACE e as imagens necessárias para servir de referência.
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Esforço de raciocínioGPT-5.6 Sol
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    To pick up a draggable item, press the space bar.
+    While dragging, use the arrow keys to move the item.
+    Press space again to drop the item in its new position, or press escape to cancel.
+  
+
+
+
+
+
+
+
+
+  
+
+
+
+
+Arraste para reordenar os itens de navegação fixados
+
+
+    To pick up a draggable item, press the space bar.
+    While dragging, use the arrow keys to move the item.
+    Press space again to drop the item in its new position, or press escape to cancel.
